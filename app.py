@@ -1,17 +1,14 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
+import streamlit as st
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import classification_report
 from datetime import datetime
 import os
 
-app = Flask(__name__)
-app.secret_key = "qwertyuiop123456789"
-
-ADMIN_PASSWORD = "Ilikeeathon1"  # Change to your secure password
+# --- Admin password ---
+ADMIN_PASSWORD = "letmein123"  # Change this!
 
 # === 100 Scam Messages ===
 scam_samples = [
@@ -234,94 +231,55 @@ data = pd.DataFrame({
     "label": [1]*len(scam_samples) + [0]*len(real_samples)
 })
 
-# Train/test split
+# Train/test split & train model once on startup
 X_train, X_test, y_train, y_test = train_test_split(data["message"], data["label"], test_size=0.2, random_state=42)
-
-# Build pipeline
 pipeline = Pipeline([
     ("tfidf", TfidfVectorizer()),
     ("clf", LogisticRegression(max_iter=1000))
 ])
 pipeline.fit(X_train, y_train)
 
-# Print evaluation report once at startup
-print("\nEvaluation Report:\n")
-print(classification_report(y_test, pipeline.predict(X_test)))
+st.title("🔍 Scam Detector with Admin Login")
 
-# HTML Templates
-login_page = """
-<!doctype html>
-<title>Admin Login</title>
-<h2>Admin Login</h2>
-<form method="post">
-  Password: <input type="password" name="password" required>
-  <input type="submit" value="Login">
-  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
-</form>
-"""
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-detect_page = """
-<!doctype html>
-<title>Scam Detector</title>
-<h2>Scam Detector</h2>
-<p>Welcome, admin! <a href="{{ url_for('logout') }}">Logout</a></p>
-<form method="post">
-  <textarea name="message" rows="4" cols="50" placeholder="Enter message to check" required></textarea><br>
-  <input type="submit" value="Detect Scam">
-</form>
-{% if prediction %}
-  <h3>Prediction: {{ prediction }}</h3>
-{% endif %}
-"""
-
-# Helper to log predictions
-def log_to_admin(message, prediction):
-    log_entry = {
-        "timestamp": datetime.now().isoformat(),
-        "message": message,
-        "prediction": prediction
-    }
-    log_df = pd.DataFrame([log_entry])
-    log_file = "admin_log.csv"
-    if os.path.exists(log_file):
-        log_df.to_csv(log_file, mode='a', header=False, index=False)
-    else:
-        log_df.to_csv(log_file, index=False)
-
-# Routes
-@app.route("/", methods=["GET", "POST"])
-def login():
-    if session.get("logged_in"):
-        return redirect(url_for("detect"))
-    error = None
-    if request.method == "POST":
-        password = request.form.get("password", "")
+if not st.session_state.logged_in:
+    password = st.text_input("Enter admin password", type="password")
+    if st.button("Login"):
         if password == ADMIN_PASSWORD:
-            session["logged_in"] = True
-            return redirect(url_for("detect"))
+            st.session_state.logged_in = True
+            st.success("Logged in successfully!")
         else:
-            error = "Incorrect password."
-    return render_template_string(login_page, error=error)
+            st.error("Incorrect password")
+else:
+    st.write("### Enter message to check if it’s a Scam or Real:")
+    user_msg = st.text_area("Message", height=150)
 
-@app.route("/detect", methods=["GET", "POST"])
-def detect():
-    if not session.get("logged_in"):
-        return redirect(url_for("login"))
-    prediction = None
-    if request.method == "POST":
-        message = request.form.get("message", "")
-        pred_label = pipeline.predict([message])[0]
-        prediction = "Scam" if pred_label == 1 else "Real"
-        log_to_admin(message, prediction)
-    return render_template_string(detect_page, prediction=prediction)
+    if st.button("Detect Scam"):
+        if not user_msg.strip():
+            st.warning("Please enter a message.")
+        else:
+            pred = pipeline.predict([user_msg])[0]
+            label = "Scam" if pred == 1 else "Real"
+            st.markdown(f"**Prediction:** {label}")
 
-@app.route("/logout")
-def logout():
-    session.pop("logged_in", None)
-    return redirect(url_for("login"))
+            # Log prediction
+            log_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "message": user_msg,
+                "prediction": label
+            }
+            log_df = pd.DataFrame([log_entry])
+            log_file = "admin_log.csv"
+            if os.path.exists(log_file):
+                log_df.to_csv(log_file, mode='a', header=False, index=False)
+            else:
+                log_df.to_csv(log_file, index=False)
 
-if __name__ == "__main__":
-    app.run(debug=True)
+    if st.button("Logout"):
+        st.session_state.logged_in = False
+        st.experimental_rerun()
 
 # Footer credits
 st.markdown("""
