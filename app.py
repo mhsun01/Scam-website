@@ -1,9 +1,17 @@
+from flask import Flask, render_template_string, request, redirect, url_for, session
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
+from datetime import datetime
+import os
+
+app = Flask(__name__)
+app.secret_key = "qwertyuiop123456789"
+
+ADMIN_PASSWORD = "Ilikeeathon1"  # Change to your secure password
 
 # === 100 Scam Messages ===
 scam_samples = [
@@ -229,45 +237,6 @@ data = pd.DataFrame({
 # Train/test split
 X_train, X_test, y_train, y_test = train_test_split(data["message"], data["label"], test_size=0.2, random_state=42)
 
-# Pipeline
-pipeline = Pipeline([
-    ("tfidf", TfidfVectorizer()),
-    ("clf", LogisticRegression(max_iter=1000))
-])
-
-# Train model
-pipeline.fit(X_train, y_train)
-
-# Evaluate
-print("\nEvaluation Report:\n")
-print(classification_report(y_test, pipeline.predict(X_test)))
-
-# Example usage
-def detect_scam(message):
-    return "Scam" if pipeline.predict([message])[0] == 1 else "Real"
-import pandas as pd
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
-from sklearn.metrics import classification_report
-from datetime import datetime
-import os
-import getpass
-
-# === Use your existing 100 scam and 100 real samples here ===
-# scam_samples = [...]
-# real_samples = [...]
-
-# Combine dataset
-data = pd.DataFrame({
-    "message": scam_samples + real_samples,
-    "label": [1]*len(scam_samples) + [0]*len(real_samples)
-})
-
-# Train/test split
-X_train, X_test, y_train, y_test = train_test_split(data["message"], data["label"], test_size=0.2, random_state=42)
-
 # Build pipeline
 pipeline = Pipeline([
     ("tfidf", TfidfVectorizer()),
@@ -275,52 +244,84 @@ pipeline = Pipeline([
 ])
 pipeline.fit(X_train, y_train)
 
-# Print evaluation
+# Print evaluation report once at startup
 print("\nEvaluation Report:\n")
 print(classification_report(y_test, pipeline.predict(X_test)))
 
-# === Admin Config ===
-ADMIN_PASSWORD = "Ilikeeathon1"  # Change this to your own secure password
+# HTML Templates
+login_page = """
+<!doctype html>
+<title>Admin Login</title>
+<h2>Admin Login</h2>
+<form method="post">
+  Password: <input type="password" name="password" required>
+  <input type="submit" value="Login">
+  {% if error %}<p style="color:red;">{{ error }}</p>{% endif %}
+</form>
+"""
 
-# Secure logging function
+detect_page = """
+<!doctype html>
+<title>Scam Detector</title>
+<h2>Scam Detector</h2>
+<p>Welcome, admin! <a href="{{ url_for('logout') }}">Logout</a></p>
+<form method="post">
+  <textarea name="message" rows="4" cols="50" placeholder="Enter message to check" required></textarea><br>
+  <input type="submit" value="Detect Scam">
+</form>
+{% if prediction %}
+  <h3>Prediction: {{ prediction }}</h3>
+{% endif %}
+"""
+
+# Helper to log predictions
 def log_to_admin(message, prediction):
-    password_attempt = getpass.getpass("Enter admin password to log this prediction: ")
-    if password_attempt != ADMIN_PASSWORD:
-        print("❌ Incorrect password. Logging canceled.")
-        return
-
     log_entry = {
         "timestamp": datetime.now().isoformat(),
         "message": message,
         "prediction": prediction
     }
-
     log_df = pd.DataFrame([log_entry])
     log_file = "admin_log.csv"
-
     if os.path.exists(log_file):
         log_df.to_csv(log_file, mode='a', header=False, index=False)
     else:
         log_df.to_csv(log_file, index=False)
 
-    print("✅ Prediction logged to admin_log.csv")
+# Routes
+@app.route("/", methods=["GET", "POST"])
+def login():
+    if session.get("logged_in"):
+        return redirect(url_for("detect"))
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == ADMIN_PASSWORD:
+            session["logged_in"] = True
+            return redirect(url_for("detect"))
+        else:
+            error = "Incorrect password."
+    return render_template_string(login_page, error=error)
 
-# Detection with admin logging
-def detect_scam(message):
-    prediction = pipeline.predict([message])[0]
-    label = "Scam" if prediction == 1 else "Real"
-    print(f"Prediction: {label}")
-    log_to_admin(message, label)
-    return label
+@app.route("/detect", methods=["GET", "POST"])
+def detect():
+    if not session.get("logged_in"):
+        return redirect(url_for("login"))
+    prediction = None
+    if request.method == "POST":
+        message = request.form.get("message", "")
+        pred_label = pipeline.predict([message])[0]
+        prediction = "Scam" if pred_label == 1 else "Real"
+        log_to_admin(message, prediction)
+    return render_template_string(detect_page, prediction=prediction)
 
-# Example test
-sample = "Urgent: Your Netflix account has been compromised. Log in now to secure it."
-print(f"\nSample Message: {sample}")
-detect_scam(sample)
+@app.route("/logout")
+def logout():
+    session.pop("logged_in", None)
+    return redirect(url_for("login"))
 
-# Test
-print("\nSample Prediction:")
-print(detect_scam("Urgent: Your Amazon account has been compromised. Click to restore."))
+if __name__ == "__main__":
+    app.run(debug=True)
 
 # Footer credits
 st.markdown("""
