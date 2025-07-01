@@ -1,162 +1,326 @@
-import streamlit as st
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.pipeline import Pipeline
-from spellchecker import SpellChecker
 import pandas as pd
-import os
-from datetime import datetime
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report
 
-# Initialize spell checker
-spell = SpellChecker()
-MISSPELL_THRESHOLD = 0.2  # 20% misspelled words = suspicious
-
-def spell_check_scam_heuristic(message):
-    words = message.split()
-    if not words:
-        return False
-    misspelled = spell.unknown(words)
-    ratio = len(misspelled) / len(words)
-    return ratio >= MISSPELL_THRESHOLD
-
-# --- DO NOT MODIFY THESE ---
+# === 100 Scam Messages ===
 scam_samples = [
-    "Congratulations! You've won a free iPhone. Click here to claim.",
-    "Your bank account has been locked. Click to verify your identity.",
-    "Give me $100 now or your account will be closed.",
-    "You have been selected for a prize. Send your info to claim.",
-    "Please send $50 in iTunes gift cards to unlock your computer.",
-    "We detected suspicious activity. Pay $200 to restore access.",
-    "Send Bitcoin to this address to avoid arrest.",
-    "Get rich quick! Invest in this program today.",
-    "URGENT: Your Social Security number has been compromised.",
-    "This is Microsoft support. We need $100 in gift cards to fix your PC.",
-    "Hi Mom, I lost my phone and I’m using a friend’s. Can you send me $400 through Zelle? I need it to get home.",
-    "Your bank account has been temporarily suspended due to suspicious login activity. Please reply with your full name and last four digits of your SSN to unlock it.",
-    "Congratulations! You’ve been selected to win a new iPhone 15 Pro. To claim your prize, please reply YES and confirm your shipping address.",
-    "This is Amazon Security. A charge of $1,027.43 was attempted on your account for a MacBook. If this wasn’t you, reply CANCEL now.",
-    "URGENT: Your PayPal account has been flagged. Please reply with your full name, date of birth, and billing zip code to verify your identity.",
-    "This is Officer Jonathan Blake from the Social Security Administration. Your number has been linked to illegal activities. Call us immediately to avoid arrest.",
-    "We were unable to deliver your FedEx package due to an incorrect address. Please reply with your full name and current address to reschedule delivery.",
-    "You've been exposed to someone who tested positive for COVID-19. Click the link to schedule a mandatory test and avoid penalties.",
-    "Your student loan may be eligible for full forgiveness under a new program. Reply FORGIVE to learn how to reduce or eliminate your balance.",
-    "You missed jury duty and a warrant has been issued for your arrest. Pay the fine now to avoid legal consequences.",
-    "Apple ID Alert: A device in Texas just logged into your account. If this was not you, reply STOP to prevent access.",
-    "Your Netflix account will be suspended in 24 hours due to billing issues. Please reply with your name and the last 4 digits of your card to continue service.",
-    "You’ve won a $100 Target gift card. To receive your reward, reply CLAIM and verify your address.",
-    "This is Capital One Fraud Department. A $927.12 charge was declined. Please reply with YES or NO if this was you.",
-    "Hi Grandma, I’m in trouble. I got into an accident and I need money for bail. Please don’t tell mom and dad. Can you send me $1,500?",
-    "This is the IRS. You failed to pay back taxes and a warrant is pending. Call us now to avoid legal action.",
-    "Your Chase account is currently restricted. Please reply with your username and zip code to verify.",
-    "Great news! You’ve been approved for a $5,000 loan with 0% interest. No credit check required. Reply APPLY to begin.",
-    "A family member has added you to a life insurance policy. Confirm your identity by sending your full name and date of birth.",
-    "This is your last warning. You have outstanding toll violations. Failure to respond will result in license suspension.",
-    "Your parcel is being held due to unpaid customs fees. Reply with your name and payment method to release it.",
-    "A charge of $1,234.56 has been made at Best Buy on your Visa. If this is unauthorized, reply DISPUTE now.",
-    "This is the DMV. Your driver’s license will be suspended due to unpaid citations. Call now to resolve.",
-    "You have one voicemail from the U.S. Border Patrol regarding a customs investigation. Call now or reply YES to schedule a callback.",
-    "Your computer has been infected with a virus. Do not turn off your machine. Call Microsoft Certified Support immediately at 1-800-*-**.",
-    "Facebook has locked your account due to policy violations. To regain access, reply with your full name and email address.",
-    "You’ve been entered in a raffle to win $5,000. Increase your odds by confirming your entry with your cell number and zip code.",
-    "Your Wells Fargo online banking has been locked. Reply VERIFY to unlock access now.",
-    "Google Pay has detected unusual activity. Please reply YES to confirm or NO to block the transaction.",
-    "Your 2FA code is 493820. If you didn’t request this, your account may be compromised. Reply STOP.",
-    "This is the electric company. Your account is past due and will be disconnected in 2 hours unless payment is received immediately. Call now.",
-    "Hi, this is AT&T. Your number has been randomly selected to receive a $100 credit. To claim, reply CLAIM and confirm your account PIN.",
-    "Security alert: Your account was accessed from an unfamiliar location. Please confirm your identity by replying with your birthday and zip code.",
-    "You’ve been selected for an exclusive government grant. No repayment necessary. Reply YES for eligibility screening.",
-    "This is your final notice regarding vehicle warranty expiration. Reply EXTEND to renew coverage.",
-    "Please verify your address for a package being held under your name. Failure to do so will result in disposal.",
-    "Congratulations! You qualify for Medicare benefits upgrades. Reply YES to speak with a licensed agent today.",
-    "Your cash app payment failed. To avoid account suspension, reply with your username and full name.",
-    "Hello, we noticed you haven’t claimed your tax refund. Please confirm your bank account for direct deposit.",
-    "Hi, this is Brandon from HR. We need to verify your W-2 details for processing. Can you send a photo of your social security card?",
-    "This is a scam",
-    "Give me your credit card info"
+    "Your account has been locked. Click here to unlock.",
+    "Win a free MacBook by entering your email today!",
+    "Your PayPal account is suspended. Confirm now.",
+    "Unusual login attempt. Secure your account now.",
+    "Act now to claim your $500 gift card!",
+    "You’ve won the lottery! Click to claim.",
+    "Amazon order issue: log in to verify your identity.",
+    "IRS alert: you owe taxes. Pay immediately.",
+    "Apple security alert: someone logged into your ID.",
+    "Get rich quick with our crypto platform.",
+    "Reset your password now to avoid permanent lock.",
+    "We noticed suspicious activity. Confirm your account.",
+    "Free Netflix for a year – limited time only.",
+    "Your social security number has been suspended.",
+    "Confirm your Chase Bank info to avoid closure.",
+    "Last chance to win a Samsung Galaxy S21!",
+    "PayPal alert: unauthorized transaction detected.",
+    "You're selected for a government grant. Apply now.",
+    "Congratulations! You’re a lucky winner!",
+    "Urgent: Account suspended for suspicious activity.",
+    "Update billing info to continue service.",
+    "Your package could not be delivered. Fix address.",
+    "Final notice: car warranty expired.",
+    "Earn $5,000/week working from home.",
+    "Exclusive crypto investment opportunity. Don’t miss out!",
+    "Security alert from your bank – verify now.",
+    "Free iPhone for survey participants. Sign up here.",
+    "You’re pre-approved for a $10,000 loan!",
+    "Amazon rewards: you have a pending gift.",
+    "Re: invoice – open attachment immediately.",
+    "Facebook login attempt from unknown device.",
+    "Walmart gift card waiting for you.",
+    "Your PC is infected – download antivirus now.",
+    "Reactivation required: email storage full.",
+    "One-time offer: zero-interest credit card.",
+    "Secure your email account before it's disabled.",
+    "eBay refund pending – confirm identity.",
+    "You’ve been selected for a mystery shopper program.",
+    "Free AirPods offer ends soon!",
+    "Microsoft Alert: Virus detected on your device.",
+    "Click here to update your driver's license info.",
+    "Bitcoin deal: double your money instantly.",
+    "You have a voicemail from your bank.",
+    "Wire transfer failed – verify immediately.",
+    "Medical bill overdue – click to pay.",
+    "Unlock $1,000 in Walmart cash now.",
+    "Mobile carrier rebate expiring – claim now.",
+    "Student loan forgiveness available – enroll today.",
+    "Final warning: delete files unless you act.",
+    "Please verify your identity to restore access.",
+    "Congratulations! You qualify for free rent assistance.",
+    "Security update required: click now.",
+    "Get paid $250 for completing this survey.",
+    "Urgent delivery failed: reschedule now.",
+    "COVID-19 relief fund: apply immediately.",
+    "Bank transaction alert: suspicious withdrawal.",
+    "Government benefits unclaimed. Apply today.",
+    "Re: unpaid invoice attached.",
+    "Crypto giveaway – Elon Musk special event!",
+    "Your Amazon Prime will expire today. Renew now.",
+    "Click to accept payment of $980 USD.",
+    "Netflix payment failed. Update info.",
+    "Apple giveaway: first 1,000 get a MacBook.",
+    "Help needed urgently – stranded abroad.",
+    "One-time password: confirm to continue.",
+    "Visa gift card reward available!",
+    "You’ve been selected for cash back bonus.",
+    "Urgent: Restore access to your cloud files.",
+    "We detected unusual activity on your account.",
+    "Click to avoid legal action.",
+    "Social Security fraud alert – respond now.",
+    "Act fast! iPad Pro giveaway ending today.",
+    "Free phone service for a year – apply here.",
+    "New login from New York – secure account.",
+    "You're pre-approved for debt relief.",
+    "Your loan application is incomplete – finish now.",
+    "Exclusive rewards waiting for you – claim now!",
+    "You’ve received a secure message – view here.",
+    "$1000 Target gift card waiting.",
+    "Recover deleted messages now – urgent.",
+    "Password expired – update to continue.",
+    "Warning: data breach reported. Protect info.",
+    "Your subscription has been auto-renewed.",
+    "Tap to collect your pending reward.",
+    "Final alert: verify credit card for continuity.",
+    "Activate emergency backup now.",
+    "Click to authorize bank transaction.",
+    "Exclusive travel deal for you!",
+    "Account recovery in progress – verify code.",
+    "Hot stock alert! Invest today.",
+    "You've been overcharged – request refund.",
+    "Banking error – resolve now.",
+    "Delivery issue – missing signature. Fix now.",
+    "Free Costco membership – sign up here.",
+    "We found errors in your tax return.",
+    "Crypto alert: wallet not secure.",
+    "Child tax credit ready – update details.",
+    "Service discontinued – resume access today.",
+    "Cash out now before bonus expires.",
+    "You’ve reached your data cap – upgrade required.",
+    "One-click virus cleaner now available.",
+    "We sent you money – accept transfer.",
+    "Facebook security breach. Act now.",
+    "Massive giveaway inside – you’re invited!"
 ]
 
+# === 100 Real Messages ===
 real_samples = [
-    "Hi John, just checking if we’re still on for dinner tomorrow.",
-    "The report is ready and attached to this email.",
-    "Reminder: Your dentist appointment is on Friday at 3pm.",
-    "Thanks for your purchase! Your order will arrive soon.",
-    "Meeting rescheduled to Monday, please confirm availability.",
-    "Can you review this document before our meeting?",
-    "Happy birthday! Wishing you a great year ahead.",
-    "Looking forward to seeing you at the conference next week.",
-    "Please submit your timesheet by end of day.",
-    "Don’t forget to RSVP for the company party.",
-    "Good morning! Hope you slept well.",
-    "Don't forget we have that group meeting at 4.",
-    "I’m making pasta tonight if you want some.",
-    "Hey, I saw this and thought of you: [link]",
-    "Just talked to Mom, she said to say hi.",
-    "I’m almost done with the project, just final touches left.",
-    "You left your headphones on the kitchen counter.",
-    "Let’s go for a walk later if the weather’s nice.",
-    "Can you help me carry the groceries up?",
-    "Want to do brunch this weekend?"
+    "Hey, are we still on for coffee tomorrow?",
+    "Your order from Target has shipped.",
+    "Meeting is rescheduled to 3 PM Thursday.",
+    "Thanks for your help with the report!",
+    "Can you send over the project files?",
+    "Dinner at 7 sound good?",
+    "Happy anniversary! Love you!",
+    "Looking forward to seeing you this weekend.",
+    "Just landed, I’ll call soon.",
+    "Check your inbox for the Zoom link.",
+    "Doctor’s appointment confirmed for Monday.",
+    "I left the keys under the mat.",
+    "Don’t forget to call Grandma today.",
+    "Running late, be there in 15.",
+    "Great work on the presentation!",
+    "Let’s finalize the slides tonight.",
+    "Package delivered at your front door.",
+    "Your Uber is arriving now.",
+    "Flight delayed, new departure at 6 PM.",
+    "Can we move our meeting to Tuesday?",
+    "Happy birthday! 🎉",
+    "What time is the game on?",
+    "I uploaded the document to the shared folder.",
+    "Congrats on the new job!",
+    "It’s raining here. Drive safe.",
+    "Lunch tomorrow at our usual spot?",
+    "Payment received – thank you!",
+    "Don’t forget your umbrella!",
+    "Your weekly schedule is updated.",
+    "Please approve the latest draft.",
+    "We should catch up soon!",
+    "Let me know your ETA.",
+    "No worries – take your time.",
+    "All set for the interview.",
+    "I'll bring dessert tonight.",
+    "Here’s the recipe I mentioned.",
+    "Need anything from the store?",
+    "Loved your latest blog post!",
+    "School pickup is at 2:30.",
+    "Call me when you’re free.",
+    "The file is too large – use Drive.",
+    "See you at the gym tomorrow?",
+    "Thanks for the referral!",
+    "Let’s plan a trip soon.",
+    "Your subscription was renewed.",
+    "Team lunch next Friday – RSVP.",
+    "Great seeing you yesterday!",
+    "Invoice attached – due Friday.",
+    "Let’s chat after your meeting.",
+    "I sent the flowers this morning.",
+    "Did you get my message?",
+    "Need help with your resume?",
+    "Join the Zoom call at 4.",
+    "Movie night this weekend?",
+    "Hope you feel better soon.",
+    "The baby photos are adorable!",
+    "Meeting notes are in your inbox.",
+    "Practice starts at 6 PM sharp.",
+    "Dinner was amazing – thank you!",
+    "I’ll resend the file right now.",
+    "Take care and talk soon!",
+    "Confirmed: appointment at 11 AM.",
+    "Let’s grab drinks after work.",
+    "Final edit is ready for review.",
+    "Just wanted to say hi!",
+    "Your check has been deposited.",
+    "Catch you later!",
+    "See you in class tomorrow.",
+    "Thanks again for your feedback.",
+    "Bringing snacks to the party!",
+    "Check out this article!",
+    "Reservation is under your name.",
+    "Let me know if it prints.",
+    "I’ll email you the quote.",
+    "Leaving now – see you soon.",
+    "Can you proofread this real quick?",
+    "Just checking in on you.",
+    "Your points expire next month.",
+    "Don't forget to water the plants.",
+    "Printer is out of paper again!",
+    "Sending love from all of us!",
+    "Don’t stay up too late!",
+    "Made it home safe – thanks!",
+    "Are you free for a call?",
+    "Link to the event below.",
+    "Let’s touch base next week.",
+    "Miss you – call when you can.",
+    "Calendar invite sent.",
+    "I’ll take care of it.",
+    "Make sure to lock up.",
+    "Flight info: Gate B12.",
+    "Finished the book you gave me.",
+    "Meeting recap attached.",
+    "The kids loved it!",
+    "New photos in the album.",
+    "How’s your weekend going?",
+    "FYI: traffic on 5th is bad.",
+    "Uploading now – standby.",
+    "All systems look good!",
+    "Don’t forget your badge.",
+    "App update available.",
+    "Let’s celebrate soon!",
+    "Thanks for being awesome."
 ]
 
-# Labels + model
-texts = scam_samples + real_samples
-labels = [1]*len(scam_samples) + [0]*len(real_samples)
+# Create dataset
+data = pd.DataFrame({
+    "message": scam_samples + real_samples,
+    "label": [1]*len(scam_samples) + [0]*len(real_samples)
+})
 
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(data["message"], data["label"], test_size=0.2, random_state=42)
+
+# Pipeline
 pipeline = Pipeline([
-    ('vect', CountVectorizer()),
-    ('clf', RandomForestClassifier())
+    ("tfidf", TfidfVectorizer()),
+    ("clf", LogisticRegression(max_iter=1000))
 ])
-pipeline.fit(texts, labels)
 
-# Streamlit UI
-st.title("Scam Detector")
-user_input = st.text_area("Enter a message or email content below:", height=150)
+# Train model
+pipeline.fit(X_train, y_train)
 
-if st.button("Check for Scam"):
-    if user_input.strip() == "":
-        st.warning("Please enter a message first.")
+# Evaluate
+print("\nEvaluation Report:\n")
+print(classification_report(y_test, pipeline.predict(X_test)))
+
+# Example usage
+def detect_scam(message):
+    return "Scam" if pipeline.predict([message])[0] == 1 else "Real"
+import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import classification_report
+from datetime import datetime
+import os
+import getpass
+
+# === Use your existing 100 scam and 100 real samples here ===
+# scam_samples = [...]
+# real_samples = [...]
+
+# Combine dataset
+data = pd.DataFrame({
+    "message": scam_samples + real_samples,
+    "label": [1]*len(scam_samples) + [0]*len(real_samples)
+})
+
+# Train/test split
+X_train, X_test, y_train, y_test = train_test_split(data["message"], data["label"], test_size=0.2, random_state=42)
+
+# Build pipeline
+pipeline = Pipeline([
+    ("tfidf", TfidfVectorizer()),
+    ("clf", LogisticRegression(max_iter=1000))
+])
+pipeline.fit(X_train, y_train)
+
+# Print evaluation
+print("\nEvaluation Report:\n")
+print(classification_report(y_test, pipeline.predict(X_test)))
+
+# === Admin Config ===
+ADMIN_PASSWORD = "Ilikeeathon1"  # Change this to your own secure password
+
+# Secure logging function
+def log_to_admin(message, prediction):
+    password_attempt = getpass.getpass("Enter admin password to log this prediction: ")
+    if password_attempt != ADMIN_PASSWORD:
+        print("❌ Incorrect password. Logging canceled.")
+        return
+
+    log_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "message": message,
+        "prediction": prediction
+    }
+
+    log_df = pd.DataFrame([log_entry])
+    log_file = "admin_log.csv"
+
+    if os.path.exists(log_file):
+        log_df.to_csv(log_file, mode='a', header=False, index=False)
     else:
-        model_prediction = pipeline.predict([user_input])[0]
-        spellcheck_flag = spell_check_scam_heuristic(user_input)
-        keyword_flag = any(keyword in user_input.lower() for keyword in ["give me $", "credit card info"])
-        final_prediction = model_prediction or spellcheck_flag or keyword_flag
-        result_label = "SCAM" if final_prediction else "NOT SCAM"
+        log_df.to_csv(log_file, index=False)
 
-        # Save to CSV log
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        log_entry = pd.DataFrame([{
-            "timestamp": timestamp,
-            "input": user_input,
-            "result": result_label
-        }])
-        if os.path.exists("scam_detection_logs.csv"):
-            log_entry.to_csv("scam_detection_logs.csv", mode='a', header=False, index=False)
-        else:
-            log_entry.to_csv("scam_detection_logs.csv", index=False)
+    print("✅ Prediction logged to admin_log.csv")
 
-        if final_prediction:
-            st.error("⚠️ This message appears to be a SCAM.")
-        else:
-            st.success("✅ This message appears to be safe.")
+# Detection with admin logging
+def detect_scam(message):
+    prediction = pipeline.predict([message])[0]
+    label = "Scam" if prediction == 1 else "Real"
+    print(f"Prediction: {label}")
+    log_to_admin(message, label)
+    return label
 
-# Admin panel
-if "admin_mode" not in st.session_state:
-    st.session_state.admin_mode = False
+# Example test
+sample = "Urgent: Your Netflix account has been compromised. Log in now to secure it."
+print(f"\nSample Message: {sample}")
+detect_scam(sample)
 
-if not st.session_state.admin_mode:
-    if st.button("🔒 Admin Login"):
-        password = st.text_input("Enter admin password:", type="password")
-        if password == "Ihaveacrushoneathon1!":
-            st.session_state.admin_mode = True
-            st.experimental_rerun()
-else:
-    st.success("✅ Admin mode enabled.")
-    if os.path.exists("scam_detection_logs.csv"):
-        df_logs = pd.read_csv("scam_detection_logs.csv")
-        st.dataframe(df_logs)
-        st.download_button("📥 Download Log", df_logs.to_csv(index=False), "scam_detection_logs.csv", "text/csv")
-    else:
-        st.info("No logs found yet.")
+# Test
+print("\nSample Prediction:")
+print(detect_scam("Urgent: Your Amazon account has been compromised. Click to restore."))
 
 # Footer credits
 st.markdown("""
