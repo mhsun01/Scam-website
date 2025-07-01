@@ -8,7 +8,7 @@ from datetime import datetime
 import os
 
 # --- Admin password ---
-ADMIN_PASSWORD = "letmein123"  # Change this!
+ADMIN_PASSWORD = "Ilikeeathon1"  # Change this!
 
 # === 100 Scam Messages ===
 scam_samples = [
